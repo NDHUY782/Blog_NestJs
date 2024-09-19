@@ -12,12 +12,14 @@ import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { LoginUserDto } from './dto/login-user.dto';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class AuthService {
   constructor(
     @InjectRepository(User) private userRepository: Repository<User>,
     private jwtService: JwtService,
+    private configService: ConfigService,
   ) {}
 
   async register(registerUserDto: RegisterUserDto): Promise<User> {
@@ -54,20 +56,50 @@ export class AuthService {
     }
     //generate access token and refresh token
     const payload = { id: user.id, email: user.email };
-    return this.generateToken(payload);
+    const tokens = await this.generateToken(payload);
+    return {
+      tokens,
+      user,
+    };
   }
-
+  async refreshToken(refresh_token: string): Promise<any> {
+    try {
+      const verify = await this.jwtService.verifyAsync(refresh_token, {
+        secret: this.configService.get<string>('SECRET_REFRESH_TOKEN'),
+      });
+      const checkExistToken = await this.userRepository.findOneBy({
+        email: verify.email,
+        refresh_token,
+      });
+      if (checkExistToken) {
+        return this.generateToken({ id: verify.id, email: verify.email });
+      } else {
+        throw new HttpException(
+          'Refresh token is not valid',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+    } catch (error) {
+      throw new HttpException(
+        'Refresh token is not valid',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
   private async generateToken(payload: { id: number; email: string }) {
-    const token = await this.jwtService.signAsync(payload);
+    const token = await this.jwtService.signAsync(payload, {
+      secret: this.configService.get<string>('SECRET_TOKEN'),
+      expiresIn: this.configService.get<string>('EXPIRESIN_TOKEN'),
+    });
     const refresh_token = await this.jwtService.signAsync(payload, {
       // secret: this.configService.get<string>('SECRET'),
       // expiresIn: this.configService.get<string>('EXP_IN_REFRESH_TOKEN'),
-      secret: 'thisissecretkey',
-      expiresIn: '365d',
+      secret: this.configService.get<string>('SECRET_REFRESH_TOKEN'),
+      expiresIn: this.configService.get<string>('EXPIRESIN_REFRESH_TOKEN'),
     });
     await this.userRepository.update(
       { email: payload.email },
-      { refresh_token: refresh_token },
+      { refresh_token: refresh_token, token: token },
     );
 
     return { token, refresh_token };
