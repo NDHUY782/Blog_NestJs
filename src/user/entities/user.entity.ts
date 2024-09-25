@@ -22,11 +22,10 @@ export class User {
   @Column()
   last_name: string;
 
-  @Column({ default: '' })
+  // @Column({ nullable: true, default: null })
+  // refresh_token: string;
+  @Column({ nullable: true, default: null })
   refresh_token: string;
-
-  @Column({ default: '' })
-  token: string;
 
   @Column({ default: 1 })
   status: number;

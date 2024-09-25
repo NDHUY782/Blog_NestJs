@@ -35,7 +35,6 @@ export class AuthService {
     return await this.userRepository.save({
       ...registerUserDto,
       refresh_token: 'refresh_token_string',
-      token: 'token_string',
       password: hashPassword,
     });
   }
@@ -57,9 +56,12 @@ export class AuthService {
     //generate access token and refresh token
     const payload = { id: user.id, email: user.email };
     const tokens = await this.generateToken(payload);
+    const updatedUser = await this.userRepository.findOne({
+      where: { email: loginUserDto.email },
+    });
     return {
       tokens,
-      user,
+      updatedUser,
     };
   }
   async refreshToken(refresh_token: string): Promise<any> {
@@ -87,22 +89,20 @@ export class AuthService {
     }
   }
   private async generateToken(payload: { id: number; email: string }) {
-    const token = await this.jwtService.signAsync(payload, {
+    const access_token = await this.jwtService.signAsync(payload, {
       secret: this.configService.get<string>('SECRET_TOKEN'),
       expiresIn: this.configService.get<string>('EXPIRESIN_TOKEN'),
     });
     const refresh_token = await this.jwtService.signAsync(payload, {
-      // secret: this.configService.get<string>('SECRET'),
-      // expiresIn: this.configService.get<string>('EXP_IN_REFRESH_TOKEN'),
       secret: this.configService.get<string>('SECRET_REFRESH_TOKEN'),
       expiresIn: this.configService.get<string>('EXPIRESIN_REFRESH_TOKEN'),
     });
     await this.userRepository.update(
       { email: payload.email },
-      { refresh_token: refresh_token, token: token },
+      { refresh_token: refresh_token },
     );
 
-    return { token, refresh_token };
+    return { access_token, refresh_token };
   }
   private async hashPassword(password: string): Promise<string> {
     const saltRound = 10;
