@@ -1,17 +1,31 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, UpdateResult } from 'typeorm';
+import { DeleteResult, Like, Repository, UpdateResult } from 'typeorm';
 import { User } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import * as bcrypt from 'bcrypt';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { FilterUserDto } from './dto/filter-user.dto';
 @Injectable()
 export class UserService {
   constructor(
     @InjectRepository(User) private userRepository: Repository<User>,
   ) {}
-  async findAll(): Promise<User[]> {
-    return await this.userRepository.find({
+  async findAll(query: FilterUserDto): Promise<any> {
+    const items_per_page = Number(query.items_per_page) || 10;
+    const page = Number(query.page) || 1;
+    const skip = (page - 1) * items_per_page;
+    const keyword = query.search || '';
+
+    const [result, total] = await this.userRepository.findAndCount({
+      where: [
+        { first_name: Like('%' + keyword + '%') },
+        { last_name: Like('%' + keyword + '%') },
+        { email: Like('%' + keyword + '%') },
+      ],
+      order: { create_At: 'DESC' },
+      take: items_per_page,
+      skip: skip,
       select: [
         'id',
         'email',
@@ -22,6 +36,18 @@ export class UserService {
         'update_At',
       ],
     });
+    const lastPage = Math.ceil(total / items_per_page);
+    const nextPage = page + 1 > lastPage ? null : page + 1;
+    const prevPage = page - 1 < 1 ? null : page - 1;
+
+    return {
+      data: result,
+      total,
+      currentPage: page,
+      nextPage,
+      lastPage,
+      prevPage,
+    };
   }
   async getUserByID(id: number): Promise<User> {
     return await this.userRepository.findOneBy({ id });
@@ -32,9 +58,10 @@ export class UserService {
       where: { email: createUserDto.email },
     });
     if (userExists) {
-      // throw new ConflictException('Email already exists');
       throw new BadRequestException('Email already exists');
     }
+
+    createUserDto.password = hashPassword;
 
     return await this.userRepository.save(createUserDto);
   }
@@ -44,5 +71,9 @@ export class UserService {
     updateUserDto: UpdateUserDto,
   ): Promise<UpdateResult> {
     return await this.userRepository.update(id, updateUserDto);
+  }
+
+  async deleteUser(id: number): Promise<DeleteResult> {
+    return await this.userRepository.delete(id);
   }
 }
