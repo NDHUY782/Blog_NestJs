@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -7,6 +8,7 @@ import {
   Post,
   Put,
   Query,
+  Req,
   Request,
   UploadedFile,
   UploadedFiles,
@@ -20,6 +22,8 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { FilterUserDto } from './dto/filter-user.dto';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+import { storageConfig } from 'helpers/config';
+import { extname } from 'path';
 
 @Controller('users')
 export class UserController {
@@ -57,10 +61,75 @@ export class UserController {
   }
 
   @UseGuards(AuthGuard)
-  @UseInterceptors(FileInterceptor('avatar', {}))
+  @UseInterceptors(
+    FileInterceptor('avatar', {
+      storage: storageConfig,
+      fileFilter: (req, file, cb) => {
+        const ext = file.originalname.split('.').pop();
+        const allowedExtArr = ['jpg', 'jpeg', 'png'];
+        if (!allowedExtArr.includes(ext)) {
+          req.fileValidationError = `Wrong file type. Accepted: ${allowedExtArr.join(', ')}`;
+          cb(null, false);
+        } else {
+          const fileSize = parseInt(req.headers['content-length']);
+          if (fileSize > 1024 * 1024 * 5) {
+            req.fileValidationError =
+              'File size too large. Accepted file less than 5MB';
+            cb(null, false);
+          } else {
+            cb(null, true);
+          }
+        }
+      },
+    }),
+  )
   @Post('/upload-avatar')
-  uploadAvatar(@Request() req: any, @UploadedFile() file: Express.Multer.File) {
-    console.log(req);
-    console.log(file);
+  async uploadAvatar(
+    @Req() req: any,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (req.fileValidationError) {
+      throw new BadRequestException(req.fileValidationError);
+    }
+    if (!file) {
+      throw new BadRequestException('File is required');
+    }
+    const imageUrl = file.path;
+    return await this.userService.updateAvatar(req.user_data.id, imageUrl);
   }
+  // @UseInterceptors(
+  //   FileInterceptor('avatar', {
+  //     storage: storageConfig_local('avatar'),
+  //     fileFilter: (req, file, cb) => {
+  //       const ext = extname(file.originalname);
+  //       const allowedExtArr = ['.jpg', '.png', '.jpeg'];
+  //       if (!allowedExtArr.includes(ext)) {
+  //         req.fileValidationError = `Wrong ext type. Accepted: ${allowedExtArr.toString()}`;
+  //         cb(null, false);
+  //       } else {
+  //         const fileSize = parseInt(req.headers['content-length']);
+  //         if (fileSize > 1024 * 1024 * 5) {
+  //           req.fileValidationError =
+  //             'Size too large. Accepted  file less than 5MB}';
+  //           cb(null, false);
+  //         } else {
+  //           cb(null, true);
+  //         }
+  //       }
+  //     },
+  //   }),
+  // )
+  // @Post('/upload-avatar')
+  // uploadAvatar(@Req() req: any, @UploadedFile() file: Express.Multer.File) {
+  //   if (req.fileValidationError) {
+  //     throw new BadRequestException(req.fileValidationError);
+  //   }
+  //   if (!file) {
+  //     throw new BadRequestException('File is required');
+  //   }
+  //   return this.userService.updateAvatar(
+  //     req.user_data.id,
+  //     file.destination + '/' + file.filename,
+  //   );
+  // }
 }
